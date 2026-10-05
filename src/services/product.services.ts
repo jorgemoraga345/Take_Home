@@ -1,98 +1,170 @@
-/** @format */
-
-import {  PipelineStage } from 'mongoose';
-import Product from '../models/product.model';
 import { AppError } from '../utils';
-import { GetProductsInput, ProductInput, ProductUpdateInput } from '../validators/product.validators';
+import {
+  createProduct as insertProduct,
+  deleteProduct as removeProduct,
+  findProductById,
+  findProducts,
+  updateProduct as saveProductChanges,
+} from '../repositories/product.repository';
+import type {
+  ProductListQuery,
+  ProductSortField,
+  ProductWithVariants,
+  UpdateProductRecord,
+} from '../repositories/product.repository';
+import type {
+  GetProductsInput,
+  ProductInput,
+  ProductUpdateInput,
+} from '../validators/product.validators';
 
-export const createProduct = async (productInput: ProductInput) => {
-	const product = await Product.create(productInput);
-	return product;
-};
+/** Allowed fields for descending product sorting. */
+const SORT_FIELDS: ProductSortField[] = ['createdAt', 'price', 'name', 'stock'];
 
+/** Checks whether a database error is a PostgreSQL unique constraint violation. */
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    error.code === '23505'
+  );
+}
 
-export const getProducts = async (filters: GetProductsInput) => {
-	const { limit = 10, skip = 0, search = '', sort = 'createdAt', category = '', brand = '' } = filters;
+/** Validates and parses a numeric product-list query parameter. */
+function parseIntegerQuery(
+  value: string | undefined,
+  field: 'limit' | 'skip',
+  defaultValue: number,
+): number {
+  if (value === undefined) {
+    return defaultValue;
+  }
 
-	const query: PipelineStage[] = [
-		{
-			$match: {
-				name: { $regex: search, $options: 'i' },
-				category: { $regex: category, $options: 'i' },
-				brand: { $regex: brand, $options: 'i' },
-			},
-		},
-		{
-			$sort: {
-				[sort]: -1,
-			},
-		},
-		{
-			$skip: Number(skip),
-		},
-		{
-			$limit: Number(limit),
-		},
-	];
+  if (!/^\d+$/.test(value)) {
+    throw new AppError(`Invalid ${field}: expected a non-negative integer`, 400);
+  }
 
-	const countQuery : PipelineStage[] = [
+  const parsed = Number(value);
+  const isValidLimit = field === 'limit' && parsed >= 1 && parsed <= 100;
+  const isValidSkip = field === 'skip' && parsed >= 0;
 
-		{
-			$match: {
-				name: { $regex: search, $options: 'i' },
-				category: { $regex: category, $options: 'i' },
-				brand: { $regex: brand, $options: 'i' },
-			},
-		},
-		{
-			$group: {
-				_id: null,
-				count: { $sum: 1 },
-			},
-		},
+  if (!Number.isSafeInteger(parsed) || !(isValidLimit || isValidSkip)) {
+    const requirement =
+      field === 'limit' ? 'an integer between 1 and 100' : 'a non-negative integer';
+    throw new AppError(`Invalid ${field}: expected ${requirement}`, 400);
+  }
 
-	]
+  return parsed;
+}
 
+/** Validates a product UUID before sending it to PostgreSQL. */
+function assertProductUuid(id: string): void {
+  const uuidV4Pattern =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-	//promise.all
-	const [products, countResult] = await Promise.all([
-		Product.aggregate(query),
-		Product.aggregate(countQuery),
-	]);
+  if (!uuidV4Pattern.test(id)) {
+    throw new AppError('Invalid product ID', 400);
+  }
+}
 
-	const total = countResult?.length > 0 ? countResult[0]?.count : 0;
+/** Creates a product and its variants. */
+export async function createProduct(
+  productInput: ProductInput,
+): Promise<ProductWithVariants> {
+  try {
+    return await insertProduct(productInput);
+  } catch (error) {
+    if (isUniqueViolation(error)) {
+      throw new AppError('Duplicate product variant', 400);
+    }
+    throw error;
+  }
+}
 
-	return {
-		products,
-		total,
-	};
-};
+/** Lists products using validated filters, pagination, and sorting. */
+export async function getProducts(
+  filters: GetProductsInput,
+): Promise<{ products: ProductWithVariants[]; total: number }> {
+  const sort = filters.sort ?? 'createdAt';
 
-export const getProductById = async (id: string) => {
-	const product = await Product.findById(id);
+  if (!SORT_FIELDS.includes(sort as ProductSortField)) {
+    throw new AppError('Invalid sort value', 400);
+  }
 
-	if (!product) {
-		throw new AppError('Product not found', 404);
-	}
+  const query: ProductListQuery = {
+    limit: parseIntegerQuery(filters.limit, 'limit', 10),
+    skip: parseIntegerQuery(filters.skip, 'skip', 0),
+    sort: sort as ProductSortField,
+    search: filters.search ?? '',
+    category: filters.category ?? '',
+    brand: filters.brand ?? '',
+  };
 
-	return product;
-};
+  return findProducts(query);
+}
 
-export const updateProduct = async (id: string, productUpdateInput: ProductUpdateInput) => {
-	const product = await Product.findByIdAndUpdate(id, productUpdateInput, { new: true });
+/** Gets a product by UUID or returns a 404 error. */
+export async function getProductById(id: string): Promise<ProductWithVariants> {
+  assertProductUuid(id);
 
-	if (!product) {
-		throw new AppError('Product not found', 404);
-	}
-	return product;
-};
+  const product = await findProductById(id);
+  if (!product) {
+    throw new AppError('Product not found', 404);
+  }
 
-export const deleteProduct = async (id: string) => {
-	const product = await Product.findByIdAndDelete(id);
+  return product;
+}
 
-	if (!product) {
-		throw new AppError('Product not found', 404);
-	}
+/** Updates a product and optionally replaces its variants. */
+export async function updateProduct(
+  id: string,
+  productUpdateInput: ProductUpdateInput,
+): Promise<ProductWithVariants> {
+  assertProductUuid(id);
 
-	return product;
-};
+  const changes: UpdateProductRecord = {};
+
+  if (productUpdateInput.name !== undefined) changes.name = productUpdateInput.name;
+  if (productUpdateInput.description !== undefined) {
+    changes.description = productUpdateInput.description;
+  }
+  if (productUpdateInput.price !== undefined) changes.price = productUpdateInput.price;
+  if (productUpdateInput.images !== undefined) changes.images = productUpdateInput.images;
+  if (productUpdateInput.brand !== undefined) changes.brand = productUpdateInput.brand;
+  if (productUpdateInput.category !== undefined) {
+    changes.category = productUpdateInput.category;
+  }
+  if (productUpdateInput.stock !== undefined) changes.stock = productUpdateInput.stock;
+  if (productUpdateInput.variants !== undefined) {
+    changes.variants = productUpdateInput.variants;
+  }
+
+  try {
+    const product = await saveProductChanges(id, changes);
+    if (!product) {
+      throw new AppError('Product not found', 404);
+    }
+    return product;
+  } catch (error) {
+    if (error instanceof AppError) {
+      throw error;
+    }
+    if (isUniqueViolation(error)) {
+      throw new AppError('Duplicate product variant', 400);
+    }
+    throw error;
+  }
+}
+
+/** Deletes a product by UUID or returns a 404 error. */
+export async function deleteProduct(id: string): Promise<ProductWithVariants> {
+  assertProductUuid(id);
+
+  const product = await removeProduct(id);
+  if (!product) {
+    throw new AppError('Product not found', 404);
+  }
+
+  return product;
+}
