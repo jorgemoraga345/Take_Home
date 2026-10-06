@@ -3,12 +3,16 @@
   "version": "1.0.0",
   "description": "",
   "scripts": {
-    "dev": "nodemon --exec ts-node src/index.ts",
+    "dev": "nodemon --exec ts-node src/server.ts",
     "lint": "npx eslint --fix src/**/*.ts",
     "format": "npx prettier --write src/**/*.ts",
     "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "drizzle-kit migrate",
+    "db:seed": "ts-node scripts/seed.ts"
   },
   "keywords": [],
   "author": "",
@@ -19,14 +23,16 @@
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.3",
     "@types/jsonwebtoken": "^9.0.10",
-    "@types/mongoose": "^5.11.97",
     "@types/morgan": "^1.9.10",
     "@types/node": "^24.0.3",
+    "@types/supertest": "^7.2.1",
     "drizzle-kit": "^0.31.11",
     "nodemon": "^3.1.10",
     "supabase": "^2.119.0",
+    "supertest": "^7.3.1",
     "ts-node": "^10.9.2",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "vitest": "^5.0.3"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
@@ -40,9 +46,7 @@
     "drizzle-orm": "^0.45.3",
     "express": "^5.1.0",
     "express-async-handler": "^1.2.0",
-    "express-mongo-sanitize": "^2.2.0",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.16.0",
     "morgan": "^1.10.0",
     "pino": "^9.7.0",
     "pino-pretty": "^13.0.0",

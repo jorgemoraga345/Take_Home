@@ -1,4 +1,5 @@
 import { AppError } from '../utils';
+import { isUniqueViolation } from '../utils/db-error.util';
 import {
   createProduct as insertProduct,
   deleteProduct as removeProduct,
@@ -20,16 +21,6 @@ import type {
 
 /** Allowed fields for descending product sorting. */
 const SORT_FIELDS: ProductSortField[] = ['createdAt', 'price', 'name', 'stock'];
-
-/** Checks whether a database error is a PostgreSQL unique constraint violation. */
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    error.code === '23505'
-  );
-}
 
 /** Validates and parses a numeric product-list query parameter. */
 function parseIntegerQuery(

@@ -7,6 +7,12 @@ import * as productServices from '../services';
 import { formatZodErrors } from '../utils';
 import { getProductsValidator, productInputValidator, productUpdateValidator } from '../validators/product.validators';
 
+/** Returns a route parameter as a single string for Express 5 compatibility. */
+function getProductId(req: Request): string {
+	const id = req.params.id;
+	return Array.isArray(id) ? (id[0] ?? '') : id;
+}
+
 /**
  * @desc Get all products
  * @route GET /api/products
@@ -39,7 +45,7 @@ export const getAllProducts = asyncHandler(async (req: Request, res: Response, n
  */
 
 export const getProductById = asyncHandler(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-	const product = await productServices.getProductById(req.params.id);
+	const product = await productServices.getProductById(getProductId(req));
 
 	res.status(200).json({
 		success: true,
@@ -65,7 +71,7 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response, ne
 		return;
 	}
 
-	const product = await productServices.updateProduct(req.params.id, parsed.data);
+	const product = await productServices.updateProduct(getProductId(req), parsed.data);
 
 	res.status(200).json({
 		success: true,
@@ -81,7 +87,7 @@ export const updateProduct = asyncHandler(async (req: Request, res: Response, ne
  */
 
 export const deleteProduct = asyncHandler(async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-	const product = await productServices.deleteProduct(req.params.id);
+	const product = await productServices.deleteProduct(getProductId(req));
 
 	res.status(200).json({
 		success: true,

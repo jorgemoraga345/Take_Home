@@ -2,16 +2,7 @@ import bcrypt from 'bcryptjs';
 import { AppError, generateToken } from '../utils';
 import { LoginUserInput, RegisterUserInput } from '../validators';
 import { createUser, findUserByEmail } from '../repositories/user.repository';
-
-/** Checks whether a database error is a PostgreSQL unique constraint violation. */
-function isUniqueViolation(error: unknown): boolean {
-  return (
-    typeof error === 'object' &&
-    error !== null &&
-    'code' in error &&
-    error.code === '23505'
-  );
-}
+import { isUniqueViolation } from '../utils/db-error.util';
 
 /** Registers a user, stores a bcrypt password hash, and returns an authentication token. */
 export async function registerUser(payload: RegisterUserInput): Promise<string> {
