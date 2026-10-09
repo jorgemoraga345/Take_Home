@@ -1,3 +1,19 @@
-# HELLO WORLD
+# Dependencies
+node_modules/
+.pnpm-store/
+.npm-cache/
 
-# Edit the .Gitignore configuration as you see fit
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Supabase local state and secrets
+supabase/.branches/
+supabase/.temp/
+supabase/.env
+
+# Build output
+build/
+dist/
+coverage/

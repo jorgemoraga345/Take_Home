@@ -4,7 +4,6 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
-export const MONGODB_URI = process.env.MONGODB_URI ?? 'mongodb://localhost:27017/e-commerce-backend';
 export const JWT_SECRET = process.env.JWT_SECRET ?? 'jwt-secret';
 
 export const PROD_ORIGINS = process.env.PROD_ORIGINS?.split(',');

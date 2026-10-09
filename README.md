@@ -1,181 +1,114 @@
-# Example Ecomerce API
+# E-commerce API
 
-> ## 👋 Welcome to [NIS](https://nitsg.sharepoint.com/sites/intranet)
->
-> You are in the waiting room before coming on board. This project is part of a **Take-Home Coding Challenge**
-> so the interviewer can evaluate your technical and problem-solving skills.
+REST API for a small online store, built with TypeScript, Express 5, PostgreSQL, Supabase, and Drizzle ORM.
+The API currently supports authentication, user profiles, and product catalog operations. Cart, orders, and wallet remain planned modules.
 
-REST backend for a small online store, built with **TypeScript + Express 5**.
-Today it covers authentication, user profiles and a product catalog. Cart, orders
-and wallet are planned (see [`spec/backlog.md`](spec/backlog.md)).
-
-> **Assessment fork.** This repository is used as an engineering take-home.
-> The project specification lives in [`spec/`](spec/). Start with
-> [`spec/spec.md`](spec/spec.md), then pick your ticket in
-> [`spec/backlog.md`](spec/backlog.md).
-
-## Current status
-
-| Area | State |
-| --- | --- |
-| Auth (register / login, JWT in `httpOnly` cookie) | Working |
-| Users (`/me`, profile, change password) | Working |
-| Products (CRUD, search, pagination) | Working |
-| Cart, Orders, Wallet | Empty placeholder files only |
-| Database | **MongoDB (Mongoose)** — migration to PostgreSQL / Supabase is ticket `TKT-001` |
-| Tests, lint, CI | Not set up yet |
-
-Baseline commit audited: `4750227` ("feat: product module").
+Project requirements and ticket acceptance criteria are documented in [`spec/`](spec/).
 
 ## Requirements
 
-- Node.js 22 LTS or newer
-- pnpm 9+ (`corepack enable` is enough). The repo ships both `pnpm-lock.yaml` and
-  `package-lock.json`; **use pnpm only**.
-- Docker (for a local database)
+- Node.js 22 or newer
+- pnpm 9 or newer
+- Docker Desktop (for local Supabase)
+- Supabase CLI (included as a development dependency)
 
-## Quick start (baseline, MongoDB)
+Use pnpm as the package manager. Do not commit `.env` or real credentials.
 
-```bash
-# 1. Install dependencies
+## Local setup with Supabase
+
+```powershell
 pnpm install
-
-# 2. Start a throwaway local MongoDB
-docker run -d --name mongo-dev -p 27017:27017 mongo:7
-
-# 3. Create your .env (there is no .env.example yet; creating one is part of TKT-001)
-cat > .env <<'EOF'
-NODE_ENV=development
-PORT=1337
-MONGODB_URI=mongodb://localhost:27017/e-commerce-backend
-JWT_SECRET=replace-with-a-long-random-string
-ADMIN_REGISTRATION_SECRET_KEY=replace-with-another-random-string
-DEV_ORIGINS=http://localhost:3000,http://localhost:5173
-PROD_ORIGINS=
-EOF
-
-# 4. Run in watch mode
+Copy-Item .env.example .env
+pnpm exec supabase start
+pnpm db:migrate
 pnpm dev
 ```
 
-The API listens on `http://localhost:1337` and is mounted under `/api/v1`.
+The local API listens on `http://localhost:1337` and its routes use the `/api/v1` prefix. Supabase prints its local PostgreSQL URL when it starts; the example `.env` uses `postgresql://postgres:postgres@127.0.0.1:54322/postgres` with `DATABASE_SSL=false`.
 
-```bash
-curl http://localhost:1337/api/v1
-# {"message":"Welcome to the API","version":"1.0.0","status":"success"}
+### Integration test database
+
+Integration tests require a dedicated PostgreSQL database configured through `TEST_DATABASE_URL`. The example uses `postgres_test`; create it once in the local Supabase PostgreSQL container before running the tests. In PowerShell:
+
+```powershell
+$dbContainer = docker ps --filter "name=supabase_db" --format "{{.Names}}" | Select-Object -First 1
+docker exec $dbContainer psql -U postgres -d postgres -c "CREATE DATABASE postgres_test;"
+pnpm test
 ```
 
-> Never reuse real credentials, company databases or production secrets for this
-> exercise. Use local containers or a throwaway cloud project.
+The tests apply the migrations and clear application tables in `TEST_DATABASE_URL`. Never point it at a production database or a database containing data you need.
 
-### Production-style run
+## Hosted Supabase setup
 
-```bash
-pnpm build           # compiles to ./build
-node build/index.js  # there is no "start" script yet
-```
+1. Create a Supabase project and open **Connect** to get its PostgreSQL connection details.
+2. For `pnpm db:migrate`, set `DATABASE_URL` to the project's direct connection string (or a session pooler that supports session advisory locks) and set `DATABASE_SSL=true`.
+3. Run migrations from a trusted environment.
+4. For the deployed API, use a pooled connection string compatible with the selected Supabase pooler. The postgres.js client sets `prepare: false` for transaction-pooler compatibility.
 
-## Environment variables (baseline)
+Keep database URLs and passwords in environment variables or a secret manager. Never log or commit them. Local Supabase does not require SSL; hosted Supabase does.
 
-| Variable | Required | Default in code | Notes |
-| --- | --- | --- | --- |
-| `NODE_ENV` | no | _unset_ | `production` hides stack traces and enables `secure` cookies |
-| `PORT` | no | `1337` | |
-| `MONGODB_URI` | no | `mongodb://localhost:27017/e-commerce-backend` | Replaced by `DATABASE_URL` in `TKT-001` |
-| `JWT_SECRET` | **yes** | `jwt-secret` | The insecure default is a known defect (`TKT-002`) |
-| `ADMIN_REGISTRATION_SECRET_KEY` | **yes** | `admin-registration-secret-key` | Same defect |
-| `DEV_ORIGINS` | no | _unset_ | Comma-separated CORS origins when not in production |
-| `PROD_ORIGINS` | no | _unset_ | Comma-separated CORS origins in production |
+## Environment variables
 
-## Smoke test with curl
+Copy `.env.example` to `.env` and replace the placeholders. Main settings:
 
-```bash
-BASE=http://localhost:1337/api/v1
-
-# Register a regular user (stores the session cookie in cookies.txt)
-curl -i -c cookies.txt -X POST $BASE/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"Ana Perez","email":"ana@example.com","password":"secret123"}'
-
-# Who am I?
-curl -b cookies.txt $BASE/users/me
-
-# Register an admin (needs ADMIN_REGISTRATION_SECRET_KEY from your .env)
-curl -c admin.txt -X POST $BASE/auth/register \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"Admin","email":"admin@example.com","password":"secret123","role":"admin","secret_key":"<ADMIN_REGISTRATION_SECRET_KEY>"}'
-
-# Create a product (admin only)
-curl -b admin.txt -X POST $BASE/products \
-  -H 'Content-Type: application/json' \
-  -d '{"name":"Wool Beanie","description":"Warm and soft","price":12990,"images":["https://example.com/beanie.jpg"],"brand":"Battle Axe","category":"accessories","stock":25}'
-
-# List products
-curl "$BASE/products?limit=10&skip=0&search=wool"
-```
-
-## API overview (baseline)
-
-All routes are prefixed with `/api/v1`.
-
-| Method | Path | Auth | Description |
-| --- | --- | --- | --- |
-| GET | `/` | public | Welcome / version |
-| POST | `/auth/register` | public | Create account, sets `access_token` cookie |
-| POST | `/auth/login` | public | Log in, sets `access_token` cookie |
-| GET | `/users/me` | user | Current user |
-| PUT | `/users/profile` | user | Update `name` / `email` |
-| PUT | `/users/change-password` | user | Change password |
-| GET | `/products` | public | List. Query: `limit`, `skip`, `search`, `sort`, `category`, `brand` |
-| GET | `/products/:id` | public | Product detail |
-| POST | `/products` | admin | Create product |
-| PUT | `/products/:id` | admin | Update product |
-| DELETE | `/products/:id` | admin | Delete product |
-
-Current success shape: `{ "success": true, "message": "...", "data": ... }`.
-The target contract is defined in [`spec/spec.md`](spec/spec.md#6-api-and-json-conventions).
-
-## Scripts
-
-| Script | What it does |
+| Variable | Purpose |
 | --- | --- |
-| `pnpm dev` | `nodemon` + `ts-node` on `src/index.ts` |
-| `pnpm build` | `tsc` into `./build` |
-| `pnpm lint` / `pnpm format` | Declared, but ESLint is **not installed or configured** yet (`TKT-005`) |
+| `DATABASE_URL` | PostgreSQL connection used by the API and Drizzle Kit |
+| `DATABASE_SSL` | Set to `false` locally and `true` for hosted Supabase |
+| `DATABASE_POOL_MAX` | Maximum postgres.js connections |
+| `TEST_DATABASE_URL` | Dedicated database used by integration tests |
+| `JWT_SECRET` | Secret used to sign authentication tokens |
+| `ADMIN_REGISTRATION_SECRET_KEY` | Secret required for public admin registration |
+| `SEED_ADMIN_EMAIL`, `SEED_ADMIN_PASSWORD` | Credentials for the local seed administrator |
+| `DEV_ORIGINS`, `PROD_ORIGINS` | Allowed CORS origins |
 
-The expected final script set (`start`, `typecheck`, `test`, `db:*`, ...) is listed in
-[`spec/spec.md`](spec/spec.md#4-expected-project-structure).
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `pnpm dev` | Start the API in watch mode |
+| `pnpm build` | Compile TypeScript to `build/` |
+| `pnpm typecheck` | Check types without emitting files |
+| `pnpm test` | Run integration tests with Vitest and Supertest |
+| `pnpm test:watch` | Run tests in watch mode |
+| `pnpm db:generate` | Generate a Drizzle SQL migration from schema changes |
+| `pnpm db:migrate` | Apply committed migrations |
+| `pnpm db:seed` | Create one administrator and 20 sample products |
+
+The seed script requires `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD`. It replaces only the sample products it owns, identified by their names and the `Seed Script` brand.
+
+## API overview
+
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| `POST` | `/api/v1/auth/register` | Public | Register a user |
+| `POST` | `/api/v1/auth/login` | Public | Log in |
+| `GET` | `/api/v1/users/me` | User | Get the current profile |
+| `PUT` | `/api/v1/users/profile` | User | Update the profile |
+| `PUT` | `/api/v1/users/change-password` | User | Change the password |
+| `GET` | `/api/v1/products` | Public | List and filter products |
+| `GET` | `/api/v1/products/:id` | Public | Get a product |
+| `POST` | `/api/v1/products` | Admin | Create a product |
+| `PUT` | `/api/v1/products/:id` | Admin | Update a product |
+| `DELETE` | `/api/v1/products/:id` | Admin | Delete a product |
+
+Successful responses retain the existing `{ success, message, data }` shape. Product listing returns `{ products, total }` inside `data`.
 
 ## Project layout
 
 ```text
 src/
-  config/        logger, DB connection
-  constants/     app + role constants
-  controllers/   request parsing and responses
-  middlewares/   auth, errors, security
-  models/        Mongoose models (removed by TKT-001)
-  routes/        route tables
-  services/      business logic
-  types/         TypeScript types
-  utils/         JWT, AppError, Zod error formatting
-  validators/    Zod schemas
+  app.ts          Express app factory for the server and tests
+  server.ts       Database connection, HTTP listener, and shutdown
+  db/             postgres.js client and Drizzle schema
+  repositories/   PostgreSQL data access
+  services/       Authentication, users, and products
+  routes/         HTTP route tables
+test/             Vitest integration tests against PostgreSQL
+drizzle/          Committed SQL migrations
+supabase/         Local Supabase configuration
 ```
 
-The layout expected after the first ticket is in [`spec/spec.md`](spec/spec.md#4-expected-project-structure).
+## Git workflow
 
-## Contributing workflow
-
-1. Branch from `main`: `feat/TKT-001-postgres-migration`
-2. Small, atomic commits using Conventional Commits (`feat:`, `fix:`, `test:`, `docs:`, `chore:`)
-3. Rebase on `main` before opening a PR; do not merge `main` into your branch
-4. Open a PR using the template, link the ticket, attach the evidence listed in
-   [`spec/profOfWork.md`](spec/profOfWork.md)
-5. Reviews: reply to every comment, push fixes as new commits, then squash only if asked
-
-Definition of Done: [`spec/product.md`](spec/product.md).
-
-## License
-
-The upstream repository declares no license. Treat this fork as private, internal
-assessment material and do not redistribute it.
+Use a ticket branch, keep commits small, and follow Conventional Commits. See [`spec/spec.md`](spec/spec.md) and [`spec/profOfWork.md`](spec/profOfWork.md) for the project workflow and evidence requirements.
