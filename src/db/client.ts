@@ -26,12 +26,19 @@ const client = postgres(databaseUrl, {
   prepare: false,
 });
 
+// Drizzle instance bound to the shared postgres.js pool.
 export const db = drizzle(client, { schema });
 
+/**
+ * Verifies the database is reachable. Call once at startup so a bad config fails fast.
+ *
+ * @throws If the connection cannot be established.
+ */
 export async function connectDatabase(): Promise<void> {
   await client`select 1`;
 }
 
+// Closes the connection pool. Call on shutdown and in test teardown.
 export async function close(): Promise<void> {
   await client.end();
 }
